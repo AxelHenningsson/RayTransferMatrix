@@ -76,7 +76,7 @@ def sample_plane_to_paraview(x, number_of_lenses, lens_space, lens_radius, fname
     writer.Write()
 
 def backfocal_to_paraview(x, number_of_lenses, lens_space, lens_radius, fname):
-    t = number_of_lenses*lens_space / 2000.
+    t = number_of_lenses*lens_space / 20.
     w = 0.05
     h = 0.05
 
@@ -169,15 +169,15 @@ def ray_data_to_paraview(ray_data, fname):
     writer.SetInputData(poly_data)
     writer.Write()
 
-def free_space_propagate( ray, distance ):
+def free_space_propagate( rays, distance ):
     M = np.array([[ 1.,   distance],
                   [ 0,        1.     ]])
-    return M @ ray
+    return M @ rays
 
-def thin_lens_propagate( ray, focal_length ):
+def thin_lens_propagate( rays, focal_length ):
     M = np.array([[1.,               0 ],
                   [-1./focal_length, 1.]])
-    return M @ ray
+    return M @ rays
 
 
 # Convert NumPy array to VTK ImageData
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     refractive_decrement = 2.359 * 1e-6  # delta
     focal_length = lens_radius / ( 2 * refractive_decrement) # f
 
-    number_of_rays = 5000
+    number_of_rays = 2000
     ray_data = np.zeros((number_of_rays, number_of_lenses + 3, 3))
 
     # equation (4), simons 2016
@@ -239,9 +239,8 @@ if __name__ == "__main__":
     focal_length_CRL = focal_length * phi * ( 1. / np.tan(number_of_lenses*phi) ) + lens_space/2. # measured from exit lens surface...
     start_x = -focal_length_CRL
 
-    alpha0 = np.zeros((ray_data.shape[0], ))
 
-    yg = zg = np.linspace(-0.4*lens_radius, 0.4*lens_radius, 128)*0.5
+    yg = zg = np.linspace(-0.55*lens_radius, 0.55*lens_radius, 128)
     X, Y =np.meshgrid(yg,zg,indexing='ij')
     image = np.zeros( (128, 128) )
     image[32:64, 16:100] = 1
@@ -250,87 +249,88 @@ if __name__ == "__main__":
 
     numpy_to_vtk_image_data(image, filename='test.vti')
 
-    image_data = np.zeros((number_of_rays, ))
 
     plt.figure()
     plt.imshow(image)
 
-    for j in range(number_of_rays):
+    r = 0.4*(np.random.rand(number_of_rays, )-0.5)*2*lens_radius # radius from optical axis
 
-        zi = yi = np.inf
-        while zi>=len(zg) or yi>=len(yg) or zi<0 or yi<0:
-            r = 0.4*(np.random.rand()-0.5)*2*lens_radius # radius from optical axis
+    angle = np.random.rand(number_of_rays, )*2*np.pi
+    s, c = np.sin(angle), np.cos(angle)
+    #Rx = np.array([[1,0,0],[0,c,-s],[0,s,c]])
 
-            angle = np.random.rand()*2*np.pi
-            s,c = np.sin(angle), np.cos(angle)
-            Rx = np.array([[1,0,0],[0,c,-s],[0,s,c]])
+    x0, y0, z0 = 0, -s*r, c*r
 
-            x0, y0, z0 = Rx @ np.array([0, 0, r])
+    yi = np.round( len(yg) * (y0-np.min(yg))/(np.max(yg)-np.min(yg)) ).astype(int)
+    zi = np.round( len(zg) * (z0-np.min(zg))/(np.max(zg)-np.min(zg)) ).astype(int)
 
-            yi = np.round( len(yg) * (y0-np.min(yg))/(np.max(yg)-np.min(yg)) ).astype(int)
-            zi = np.round( len(zg) * (z0-np.min(zg))/(np.max(zg)-np.min(zg)) ).astype(int)
+    image_data = image[yi, zi]
 
-        image_data[j] = image[yi, zi]
+    alpha = 0 * 0.02 * (np.random.rand(number_of_rays,)-0.5)*2 * 1e-3
 
-        alpha = 0#0.02 * (np.random.rand()-0.5)*2 * 1e-3*1e-8
-        alpha0[j] = alpha
-        #print(alpha)
-        #raise
-        ray0 = np.array([r, alpha])
+    rays0 = np.array([r, alpha])
 
-        ray = ray0.copy()
+    rays = rays0.copy()
 
-        rays_stack = np.zeros((number_of_lenses + 3, 3))
-        x = start_x
-        rays_stack[0, 1:] = ray
-        rays_stack[0, 0] = x
-        ray = free_space_propagate(ray, np.abs(start_x))
-        #print(start_x)
-        #raise
-        x = x + np.abs(start_x)
-        for i in range(number_of_lenses):
-            if i!=0:
-                ray = free_space_propagate(ray, lens_space / 2.)
-                x = x + lens_space/2.
-            ray = thin_lens_propagate(ray, focal_length)
-            if i!=number_of_lenses-1:
-                ray = free_space_propagate(ray, lens_space / 2.)
-                x = x + lens_space/2.
-            rays_stack[i+1, 1:] = ray
-            rays_stack[i+1, 0] = x
+    # the three extra (+3) states represents the sample-, bacfocal- and image-planes.
+    rays_stack = np.zeros((number_of_rays, number_of_lenses + 3, 3))
+    states = np.array(range(number_of_lenses + 3)).astype(int)
+    x = start_x
+    rays_stack[:, 0, 0] = x
+    rays_stack[:, 0, 1:] = rays.T
 
-        x = x + focal_length_CRL
-        ray = free_space_propagate(ray, focal_length_CRL)
-        rays_stack[-2, 1:] = ray
-        rays_stack[-2, 0] = x
+    ray = free_space_propagate(rays, np.abs(start_x))
 
-        x = x + 3*focal_length_CRL
-        ray = free_space_propagate(ray, 3*focal_length_CRL)
-        rays_stack[-1, 1:] = ray
-        rays_stack[-1, 0] = x
+    x = x + np.abs(start_x)
+    for i in range(number_of_lenses):
+        if i!=0:
+            rays = free_space_propagate(rays, lens_space / 2.)
+            x = x + lens_space/2.
 
-        ray_xyz_coord = np.zeros((3, rays_stack.shape[0]))
-        ray_xyz_coord[0,:] = rays_stack[:, 0 ]
-        ray_xyz_coord[2,:] = rays_stack[:, 1 ]
-        ray_xyz_coord = Rx @ ray_xyz_coord
+        rays = thin_lens_propagate(rays, focal_length)
 
-        ray_data[j, :, :] = ray_xyz_coord[:, :].T
+        if i!=number_of_lenses-1:
+            rays = free_space_propagate(rays, lens_space / 2.)
+            x = x + lens_space/2.
+
+        rays_stack[:, i+1, 1:] = rays.T
+        rays_stack[:, i+1, 0] = x
+
+    x = x + focal_length_CRL
+    rays = free_space_propagate(rays, focal_length_CRL)
+    rays_stack[:, -2, 1:] = rays.T
+    rays_stack[:, -2, 0] = x
+
+    x = x + 3*focal_length_CRL
+    rays = free_space_propagate(rays, 3*focal_length_CRL)
+    rays_stack[:, -1, 1:] = rays.T
+    rays_stack[:, -1, 0] = x
+
+    ray_xyz_coord = np.zeros((number_of_rays, 3, rays_stack.shape[1]))
+    ray_xyz_coord[:, 0, :] = rays_stack[:, :, 0]
+    ray_xyz_coord[:, 2, :] = rays_stack[:, :, 1]
+
+    #Rx = [[1,0,0],[0,c,-s],[0,s,c]]
+    #ray_xyz_coord = Rx @ ray_xyz_coord
+
+    # np.zeros((number_of_rays, number_of_lenses + 3, 3))
+    ray_data[:, :, 0] = ray_xyz_coord[:, 0, :]
+    ray_data[:, :, 1] = c[:, np.newaxis]*ray_xyz_coord[:, 1, :] - s[:, np.newaxis]*ray_xyz_coord[:, 2, :]
+    ray_data[:, :, 2] = s[:, np.newaxis]*ray_xyz_coord[:, 1, :] + c[:, np.newaxis]*ray_xyz_coord[:, 2, :]
+
+    ray_data_to_paraview(ray_data, fname='CRL_simulation.vtk')
+    lens_to_paraview(number_of_lenses, lens_space, lens_radius, fname='CRL_lens.vtk')
+    x = np.mean(ray_data[:,-2,0])
+    backfocal_to_paraview(x, number_of_lenses, lens_space, lens_radius,  fname='backfocal.vtk')
+    x = np.mean(ray_data[:,0,0])
+    sample_plane_to_paraview(x, number_of_lenses, lens_space, lens_radius, fname='sample_plane.vtk')
+    detector_plane_to_paraview(np.mean(ray_data[:,-1,0]), number_of_lenses, lens_space, lens_radius, fname='detector_plane.vtk')
 
     pr.disable()
     pr.dump_stats('tmp_profile_dump')
     ps = pstats.Stats('tmp_profile_dump').strip_dirs().sort_stats('cumtime')
     ps.print_stats(15)
     print("")
-
-    ray_data_to_paraview(ray_data, fname='CRL_simulation.vtk')
-    lens_to_paraview(number_of_lenses, lens_space, lens_radius, fname='CRL_lens.vtk')
-    x = np.mean(ray_data[:, -2, 0])
-    #print(x - np.mean(ray_data[:, -3, 0]), focal_length_CRL )
-    #raise
-    backfocal_to_paraview(x, number_of_lenses, lens_space, lens_radius,  fname='backfocal.vtk')
-    x = np.mean(ray_data[:,0,0])
-    sample_plane_to_paraview(x, number_of_lenses, lens_space, lens_radius, fname='sample_plane.vtk')
-    detector_plane_to_paraview(np.mean(ray_data[:,-1,0]), number_of_lenses, lens_space, lens_radius, fname='detector_plane.vtk')
 
     ax = plt.figure(figsize=(12,6)).add_subplot(projection='3d')
     for j in range(number_of_rays):
@@ -348,6 +348,7 @@ if __name__ == "__main__":
     z = ray_data[:, -2, 2]*1e6
 
     plt.figure()
+    alpha0 = rays_stack[:, 0, 2]
     plt.scatter(y, z, c=np.abs(alpha0), alpha=0.5, cmap='jet')
     plt.colorbar()
 
@@ -373,6 +374,7 @@ if __name__ == "__main__":
     plt.xlim([-ymax, ymax])
     plt.ylim([-zmax, zmax])
     plt.colorbar()
+
 
 
     #plt.show()

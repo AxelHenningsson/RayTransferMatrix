@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<VTKFile type="vtkMultiBlockDataSet" version="1.0" byte_order="LittleEndian" header_type="UInt32" compressor="vtkZLibDataCompressor">
+  <vtkMultiBlockDataSet>
+    <DataSet index="0" file="cuboid_with_texture/cuboid_with_texture_0.vti"/>
+    <DataSet index="1" file="cuboid_with_texture/cuboid_with_texture_1.vti"/>
+  </vtkMultiBlockDataSet>
+</VTKFile>
