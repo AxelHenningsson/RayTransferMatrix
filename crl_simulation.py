@@ -180,47 +180,6 @@ def thin_lens_propagate( ray, focal_length ):
     return M @ ray
 
 
-# Convert NumPy array to VTK ImageData
-def numpy_to_vtk_image_data(np_array, filename):
-    # Create VTK image data object
-    vtk_image = vtk.vtkImageData()
-
-    # Set the dimensions of the image data (x, y, z)
-    dimensions = np_array.shape
-    vtk_image.SetDimensions(dimensions[1], dimensions[0], 1)
-
-    # Set the scalar type and number of scalar components
-    vtk_image.AllocateScalars(vtk.VTK_FLOAT, 1)
-
-    # Get pointer to the image data's scalar pointer
-    scalars = vtk_image.GetPointData().GetScalars()
-
-    # Copy NumPy array to VTK scalars
-    for j in range(dimensions[0]):
-        for i in range(dimensions[1]):
-            vtk_image.SetScalarComponentFromFloat(i, j, 0, 0, np_array[j, i])
-
-    transform = vtk.vtkTransform()
-    transform.Translate((0,0,0))  # Set position in x, y, z
-    transform.RotateX(0)  # Set rotation around X-axis
-    transform.RotateY(90)  # Set rotation around Y-axis
-    transform.RotateZ(0)  # Set rotation around Z-axis
-
-    # Apply the transform to the image data
-    transform_filter = vtk.vtkImageReslice()  # Correct class for image data transformation
-    transform_filter.SetInputData(vtk_image)
-    transform_filter.SetResliceTransform(transform)
-    transform_filter.SetInterpolationModeToLinear()
-    transform_filter.Update()
-
-    vtk_image = transform_filter.GetOutput()
-
-
-    writer = vtk.vtkXMLImageDataWriter()
-    writer.SetFileName(filename)
-    writer.SetInputData(vtk_image)
-    writer.Write()
-
 if __name__ == "__main__":
     pr = cProfile.Profile()
     pr.enable()
@@ -248,7 +207,6 @@ if __name__ == "__main__":
     image[16:110, 32:54] = 1
     image[100:122, 100:122] = 1
 
-    numpy_to_vtk_image_data(image, filename='test.vti')
 
     image_data = np.zeros((number_of_rays, ))
 
